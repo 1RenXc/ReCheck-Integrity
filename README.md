@@ -244,4 +244,4 @@ platform. If they differ, the files genuinely differ — ReCheck is not wrong.
 
 ## License
 
-[MIT](LICENSE) © ReCheck contributors
+[MIT](LICENSE) © Dearen Kansil
