@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+from collections import namedtuple
 
 CHUNK_SIZE = 1024 * 1024
 
@@ -18,6 +19,13 @@ ALGORITHMS = {
 HEX_LENGTHS = {
     name: constructor().digest_size * 2 for name, constructor in ALGORITHMS.items()
 }
+
+
+WalkIssue = namedtuple("WalkIssue", ("path", "reason"))
+"""A path the recursive walk could not read, paired with the OS reason."""
+
+Scan = namedtuple("Scan", ("files", "directories", "issues"))
+"""Everything one recursive walk reached, plus the gaps it could not."""
 
 
 class UnknownAlgorithmError(ValueError):
@@ -74,31 +82,65 @@ def hash_file(path, algorithm=DEFAULT_ALGORITHM, chunk_size=CHUNK_SIZE):
     return digest.hexdigest()
 
 
-def collect_targets(paths, follow_symlinks=False):
-    """Expand paths into a sorted list of concrete file paths.
+def scan_paths(paths, follow_symlinks=False):
+    """Walk paths recursively and return everything that was reachable.
 
-    Directories are walked recursively. Overlapping arguments are deduplicated
-    by resolved path so no file gets hashed twice.
+    Returns a Scan of three lists:
+
+    files
+        Every file found, sorted within each directory. Overlapping arguments
+        are deduplicated by resolved path so no file is visited twice.
+    directories
+        Every directory that was listed, the arguments themselves included.
+    issues
+        A WalkIssue for each directory that could not be listed.
+
+    A directory that cannot be read is never skipped quietly: os.walk would
+    swallow the error and hand back a shorter list, and a shorter list reads as
+    "everything checked" when it really means "everything readable". Keeping
+    the failure lets the caller report the coverage gap.
     """
-    collected = []
+    files = []
+    directories = []
+    issues = []
     seen = set()
 
-    def add(candidate):
-        key = os.path.realpath(candidate) if follow_symlinks else os.path.abspath(candidate)
+    def add(candidate, bucket):
+        key = (
+            os.path.realpath(candidate)
+            if follow_symlinks
+            else os.path.abspath(candidate)
+        )
         if key in seen:
             return
         seen.add(key)
-        collected.append(candidate)
+        bucket.append(candidate)
+
+    def on_error(exc):
+        if not isinstance(exc, OSError):
+            return
+        path = exc.filename or "<unknown path>"
+        key = os.path.abspath(path)
+        # Overlapping arguments can reach the same locked folder twice; the
+        # report should name it once.
+        if key in seen:
+            return
+        seen.add(key)
+        issues.append(WalkIssue(path, exc.strerror or str(exc)))
 
     for entry in paths:
-        if os.path.isdir(entry):
-            for root, dirnames, filenames in os.walk(entry, followlinks=follow_symlinks):
-                dirnames.sort()
-                for filename in sorted(filenames):
-                    add(os.path.join(root, filename))
-        else:
-            add(entry)
-    return collected
+        if not os.path.isdir(entry):
+            add(entry, files)
+            continue
+        add(entry, directories)
+        for root, dirnames, filenames in os.walk(
+            entry, onerror=on_error, followlinks=follow_symlinks
+        ):
+            dirnames.sort()
+            add(root, directories)
+            for filename in sorted(filenames):
+                add(os.path.join(root, filename), files)
+    return Scan(files, directories, issues)
 
 
 def human_size(num_bytes):

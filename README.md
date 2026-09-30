@@ -50,7 +50,7 @@ pipx install git+https://github.com/1RenXc/ReCheck-Integrity.git
 
 ```console
 $ recheck -V
-recheck 1.0.2 ( https://github.com/1RenXc/ReCheck-Integrity )
+recheck 1.0.3 ( https://github.com/1RenXc/ReCheck-Integrity )
 ```
 
 If that prints, ReCheck is ready.
@@ -98,13 +98,62 @@ $ echo $?
 |---|---|
 | `all N files verified` | Every checked file matched |
 | `N of M verified, K MISMATCH(ES)` | K files really changed |
-| `N of M verified, K ERROR(S)` | K files could not be read, or were not listed in the manifest |
+| `N of M verified, K ERROR(S)` | K files could not be read, or no longer exist |
+| `K UNREADABLE FOLDER(S)` | K folders could not be listed, so their contents were never checked |
+| `K NEW FILE(S)` / `K NEW FOLDER(S)` | K entries exist on disk but are not in the manifest |
 | `no files checked` | The target held no files (for example an empty directory) |
 
-Each `MISMATCH:` and `ERROR:` line repeats the path from the report above it, so
-`ERROR:` lines carry the reason in parentheses. Nothing else changes: the
-per-file reports stay exactly as they were, and a run with no failures simply
-adds the one-line summary.
+Each `MISMATCH:`, `ERROR:`, `UNREADABLE:`, `NEW FILE:` and `NEW FOLDER:` line
+repeats the path, so `ERROR:` and `UNREADABLE:` lines carry the reason in
+parentheses. Nothing else changes: the per-file reports stay exactly as they
+were, and a run with no failures simply adds the one-line summary.
+
+### New and unreadable entries
+
+A hash answer only covers the files the manifest lists. Two things happen
+outside that list, and both are reported with their full path.
+
+**`NEW FILE:` and `NEW FOLDER:`** — something is on disk that the manifest never
+recorded, so it was added after the baseline was taken (or was never covered by
+it). A run with no changes ends like this:
+
+```console
+$ recheck -v baseline.sha256
+... one report per file ...
+
+ReCheck done: 27 files verified in 4.10 seconds
+ReCheck summary: 27 of 27 files verified, 1 NEW FILE, 1 NEW FOLDER
+NEW FILE: ./Downloads/haha.tmp
+NEW FOLDER: ./Downloads/inbox
+$ echo $?
+1
+```
+
+The exit code is `1`, the same as a `MISMATCH`, because integrity is not
+confirmed either way. CI treats a dropped file like a changed one.
+
+**`UNREADABLE:`** — a folder that could not be listed, most often because of
+access rights. Nothing inside it was checked, so a clean run over a partly
+locked tree would otherwise look like a clean tree:
+
+```console
+$ recheck -v baseline.sha256
+ReCheck report for ./logs/app.log
+...
+ReCheck done: 12 files verified in 0.20 seconds
+ReCheck summary: 12 of 12 files verified, 1 UNREADABLE FOLDER
+UNREADABLE: ./logs/private (Permission denied)
+$ echo $?
+3
+```
+
+Folder paths are stored in the manifest as `#d <path>` comment lines, so
+`sha256sum -c` still ignores them. A manifest written by `sha256sum` has no
+folder records, so ReCheck reports `NEW FILE:` and tells you that `NEW FOLDER:`
+reporting is off until you regenerate the baseline.
+
+Both lines need a walk, so a verify run is one directory walk more than a plain
+`sha256sum -c`.
 
 ---
 
@@ -142,9 +191,9 @@ This list is read from the code, so `recheck -h` is always accurate.
 | Code | Meaning |
 |---|---|
 | `0` | All files matched |
-| `1` | A hash did not match, or the hash you passed was not a valid digest (`MISMATCH`) |
+| `1` | A hash did not match, the hash you passed was not a valid digest (`MISMATCH`), or a `NEW FILE`/`NEW FOLDER` turned up |
 | `2` | Usage error (unknown option, `-c` together with `-v`, etc.) |
-| `3` | File not found or I/O error |
+| `3` | File not found, I/O error, or a folder that could not be read (`ERROR`, `UNREADABLE`) |
 
 Ready for scripts and CI:
 
@@ -207,6 +256,11 @@ recheck -v iso.sha256
 Works with `md5sum` too. Useful when your pipeline already depends on
 `sha256sum -c`, for example in a Dockerfile, Jenkins, or GitHub Actions.
 
+Alongside the hash lines a ReCheck manifest carries the folders it covered, as
+`#d <path>` comment lines. Coreutils ignores `#` lines, so
+`sha256sum -c --strict` is unaffected; ReCheck uses them to tell a folder that
+was always there from one that appeared later.
+
 ---
 
 ## Update
@@ -248,6 +302,20 @@ Hashing needs read access. For root-owned files:
 ```bash
 sudo recheck -f /etc/shadow
 ```
+
+### `UNREADABLE: <folder>`
+
+The folder itself could not be listed, so ReCheck never saw what is inside it —
+the run is incomplete, not clean, and the exit code is `3`. Access rights are
+the usual cause:
+
+```bash
+sudo recheck -v baseline.sha256
+```
+
+A folder with mode `--x` behaves the same way: you may pass *through* it, but
+without the read bit its names cannot be listed, so nothing inside can be
+checked.
 
 ### `MISMATCH: the hash does not match`
 

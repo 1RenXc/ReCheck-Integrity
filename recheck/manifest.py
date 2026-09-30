@@ -7,6 +7,10 @@ checked with ``sha256sum -c`` and vice versa::
 
 Two leading comment lines record the algorithm. GNU coreutils ignores lines
 starting with ``#``, including under ``--strict``, so they cost nothing.
+
+Folders are recorded the same way, as ``#d <path>`` comment lines. Hashes are
+per file, so without a folder index a folder that appeared after the manifest
+was written would be indistinguishable from one that was always there.
 """
 
 import os
@@ -14,12 +18,14 @@ import re
 
 from recheck.core import HEX_LENGTHS
 
-MANIFEST_VERSION = "1"
+MANIFEST_VERSION = "2"
 _HEX_RE = re.compile(r"\A[0-9a-fA-F]+\Z")
 _ALGORITHM_PREFIX_RE = re.compile(r"\A([A-Za-z0-9_-]+):([0-9a-fA-F]+)\Z")
 _LABEL_RE = re.compile(r"\A([A-Za-z0-9_-]+):(\S+)\Z")
 _NON_HEX_RE = re.compile(r"[^0-9a-fA-F]")
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+_DIRECTORY_MARK = "#d"
 
 # A pasted digest is a single unbroken token, so anything carrying path syntax is
 # a filename instead. The width window is deliberately tight: it separates a
@@ -159,44 +165,67 @@ def _unescape(name):
     return name
 
 
-def format_manifest(entries, algorithm):
-    """Render manifest text from [(digest, path), ...]."""
+def format_manifest(entries, algorithm, directories=()):
+    """Render manifest text from [(digest, path), ...] and folder paths."""
     lines = [
         "# ReCheck manifest v{}".format(MANIFEST_VERSION),
         "# algorithm: {}".format(algorithm),
     ]
+    for path in directories:
+        lines.append("{} {}".format(_DIRECTORY_MARK, _escape(path)))
     for digest, path in entries:
         lines.append("{}  {}".format(digest, _escape(path)))
     return "\n".join(lines) + "\n"
 
 
-def write_manifest(path, entries, algorithm):
+def write_manifest(path, entries, algorithm, directories=()):
     """Write a manifest to path and return the number of data lines."""
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(format_manifest(entries, algorithm))
+        handle.write(format_manifest(entries, algorithm, directories))
     return len(entries)
+
+
+def _split_directory_line(body):
+    """Return the folder path on a ``#d <path>`` line, or None if it is not one.
+
+    The space is required so a comment such as ``#deleted`` is not mistaken for
+    a folder record.
+    """
+    if not body.startswith(_DIRECTORY_MARK):
+        return None
+    rest = body[len(_DIRECTORY_MARK):]
+    if rest and not rest[0].isspace():
+        return None
+    return _unescape(rest.strip())
 
 
 def read_manifest(path):
     """Parse a manifest.
 
-    Returns (entries, declared_algorithm). The declared value comes from the
-    ``# algorithm:`` comment and is a hint for diagnostics only; the caller's
-    ``-a`` stays authoritative.
+    Returns (entries, directories, declared_algorithm). The declared value comes
+    from the ``# algorithm:`` comment and is a hint for diagnostics only; the
+    caller's ``-a`` stays authoritative. ``directories`` is empty for a manifest
+    written by coreutils, which has no folder records.
     """
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
         raw = handle.read()
 
     entries = []
+    directories = []
     declared = None
 
     for lineno, line in enumerate(raw.splitlines(), start=1):
         if not line.strip():
             continue
-        if line.lstrip().startswith("#"):
-            body = line.lstrip()[1:].strip()
-            if body.lower().startswith("algorithm:"):
-                declared = body.split(":", 1)[1].strip().lower()
+        body = line.lstrip()
+        if body.startswith("#"):
+            folder = _split_directory_line(body)
+            if folder:
+                directories.append(folder)
+                continue
+            note = body[1:].strip()
+            if note.lower().startswith("algorithm:"):
+                declared = note.split(":", 1)[1].strip().lower()
             continue
 
         digest, separator, name = _split_entry(line)
@@ -214,7 +243,7 @@ def read_manifest(path):
             "{}: no properly formatted manifest lines found".format(path),
             hint=_FORMAT_HINT,
         )
-    return entries, declared
+    return entries, directories, declared
 
 
 def _split_entry(line):
