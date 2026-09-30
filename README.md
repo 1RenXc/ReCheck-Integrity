@@ -40,7 +40,7 @@ alone. This is the right approach on distros that lock down the system Python
 The same command on **Linux, macOS, and Windows**:
 
 ```bash
-pipx install git+https://github.com/1RenXc/ReCheck.git
+pipx install git+https://github.com/1RenXc/ReCheck-Integrity.git
 ```
 
 >`pipx ensurepath` adds the script folder to `PATH`. Run it once, then close and
@@ -50,7 +50,7 @@ pipx install git+https://github.com/1RenXc/ReCheck.git
 
 ```console
 $ recheck -V
-recheck 1.0.1 ( https://github.com/1RenXc/ReCheck )
+recheck 1.0.1 ( https://github.com/1RenXc/ReCheck-Integrity )
 ```
 
 If that prints, ReCheck is ready.
@@ -181,7 +181,7 @@ Works with `md5sum` too. Useful when your pipeline already depends on
 ## Update
 
 ```bash
-pipx install --force git+https://github.com/1RenXc/ReCheck.git
+pipx install --force git+https://github.com/1RenXc/ReCheck-Integrity.git
 ```
 
 ## Uninstall

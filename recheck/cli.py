@@ -32,7 +32,7 @@ from recheck.manifest import (
 )
 
 PROG = "recheck"
-BANNER_URL = "https://github.com/1RenXc/ReCheck"
+BANNER_URL = "https://github.com/1RenXc/ReCheck-Integrity"
 
 EXIT_OK = 0
 EXIT_MISMATCH = 1
