@@ -175,16 +175,23 @@ def _print_report(write, result, algorithm):
     write("{}: {}\n".format(algorithm, result["digest"]))
 
 
-def _print_verdict(write, result, expected):
+def _print_verdict(write, result, expected, algorithm, reason, defect=None):
     if "error" in result:
         write("ERROR: {}\n\n".format(result["error"]))
         return EXIT_ERROR
     if result["digest"] == expected:
-        write("MATCH: expected checksum\n\n")
+        write("MATCH: integrity confirmed\n\n")
         return EXIT_OK
-    write("MISMATCH: manifest\n")
+    write("MISMATCH: {}, so the integrity of {} is not confirmed\n".format(
+        reason, result["path"]
+    ))
     write("  expected: {}\n".format(expected))
-    write("  actual:   {}\n\n".format(result["digest"]))
+    write("  actual:   {}\n".format(result["digest"]))
+    if defect:
+        write("  note:     the expected value is not a valid {} digest; {}\n".format(
+            algorithm, defect
+        ))
+    write("\n")
     return EXIT_MISMATCH
 
 
@@ -315,19 +322,24 @@ def _run_verify_manifest(write, files, algorithm, manifest_path):
         if relocated:
             result["path"] = "{} (from manifest directory)".format(entry_path)
         _print_report(write, result, algorithm)
-        verdict = max(verdict, _print_verdict(write, result, expected))
+        verdict = max(verdict, _print_verdict(
+            write, result, expected, algorithm,
+            "the file no longer matches the manifest",
+        ))
 
     _summary_line(write, len(scope), "verified", started)
     return verdict
 
 
-def _run_verify_literal(write, files, algorithm, digest):
+def _run_verify_literal(write, files, algorithm, digest, defect=None):
     started = time.perf_counter()
     results = _resolve_targets(files, algorithm)
     verdict = EXIT_OK
     for result in results:
         _print_report(write, result, algorithm)
-        verdict = max(verdict, _print_verdict(write, result, digest))
+        verdict = max(verdict, _print_verdict(
+            write, result, digest, algorithm, "the hash does not match", defect
+        ))
     _summary_line(write, len(results), "verified", started)
     return verdict
 
@@ -348,13 +360,13 @@ def _dispatch(write, args, algorithm):
 
     if args.verify:
         try:
-            kind, value, _ = parse_verify_target(
+            kind, value, _, defect = parse_verify_target(
                 args.verify, algorithm, expected_hex_length(algorithm)
             )
         except ManifestError as exc:
             raise UsageError(str(exc), hint=exc.hint)
 
-        if kind == "hash":
+        if kind in ("hash", "malformed"):
             if not args.files:
                 raise UsageError(
                     "-v <hash> needs a target: recheck -f <file> -v <hash>"
@@ -366,7 +378,7 @@ def _dispatch(write, args, algorithm):
                         len(args.files)
                     )
                 )
-            return _run_verify_literal(write, args.files, algorithm, value)
+            return _run_verify_literal(write, args.files, algorithm, value, defect)
 
         # -v <manifest> needs no -f: every entry is checked, like sha256sum -c.
         # Passing -f narrows the run to those files, which is a spot check.

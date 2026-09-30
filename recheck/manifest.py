@@ -12,13 +12,21 @@ starting with ``#``, including under ``--strict``, so they cost nothing.
 import os
 import re
 
+from recheck.core import HEX_LENGTHS
+
 MANIFEST_VERSION = "1"
 _HEX_RE = re.compile(r"\A[0-9a-fA-F]+\Z")
 _ALGORITHM_PREFIX_RE = re.compile(r"\A([A-Za-z0-9_-]+):([0-9a-fA-F]+)\Z")
+_LABEL_RE = re.compile(r"\A([A-Za-z0-9_-]+):(\S+)\Z")
+_NON_HEX_RE = re.compile(r"[^0-9a-fA-F]")
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+# A pasted digest is a single unbroken token, so anything carrying path syntax is
+# a filename instead. The width window is deliberately tight: it separates a
+# mistyped hash from a short hex-ish filename such as "deadbeef.txt".
+_WIDTH_SLACK = 8
 
 _FORMAT_HINT = (
-    "a manifest holds one file per line as <hash><two spaces><path>, "
-    "for example: e3b0c442...7852b855  iso.img\n"
     "create one with 'recheck -f <file> -c <manifest>'; "
     "run 'recheck -h' for the full format"
 )
@@ -39,16 +47,70 @@ def is_hash_literal(value):
     return bool(_HEX_RE.match(value))
 
 
+def _is_hex_token(value):
+    """True when value is one unbroken token that is mostly hex digits."""
+    if not value or os.sep in value or (os.altsep and os.altsep in value):
+        return False
+    if "." in value or any(char.isspace() for char in value):
+        return False
+    return sum(1 for char in value if char in _HEX_DIGITS) * 2 >= len(value)
+
+
+def looks_like_digest(value):
+    """True when value is text that was meant to be a digest but is not one.
+
+    A digest is a single token of hex, so a copy that picked up a stray
+    character still looks like one to a human. Recognising that shape lets the
+    caller answer "this does not match" instead of "no such file". Any supported
+    digest width counts, so an md5 pasted under -a sha256 is still a hash.
+    """
+    if not _is_hex_token(value):
+        return False
+    return any(
+        abs(len(value) - width) <= _WIDTH_SLACK for width in HEX_LENGTHS.values()
+    )
+
+
+def digest_defect(value, expected_length):
+    """Explain why value is not a usable digest, as a clause for a message.
+
+    Returns None when the text really is a digest of the expected width.
+    """
+    if not value:
+        return "it is empty"
+    offenders = sorted(set(_NON_HEX_RE.findall(value)))
+    if offenders:
+        return "it contains characters that are not hex: {}".format(
+            ", ".join(repr(char) for char in offenders)
+        )
+    if len(value) != expected_length:
+        return "it is {} characters long, not {}".format(len(value), expected_length)
+    return None
+
+
+def _length_error(algorithm, value, expected_length):
+    return ManifestError(
+        "hash is {} hex characters but -a {} expects {}. "
+        "Pass -a <algorithm> or label the hash, e.g. {}:{}".format(
+            len(value), algorithm, expected_length, algorithm, value[:8] + "..."
+        )
+    )
+
+
 def parse_verify_target(value, algorithm, expected_length):
     """Classify a -v argument.
 
-    Returns ("hash", digest, label) for an inline digest, or ("file", path,
-    None) when the argument points at a manifest.
+    Returns (kind, value, label, defect). ``kind`` is "hash" for a usable
+    inline digest, "malformed" for text that was clearly meant to be one, and
+    "file" when the argument names a manifest. ``defect`` explains a malformed
+    digest and is None otherwise.
     """
-    prefixed = _ALGORITHM_PREFIX_RE.match(value or "")
-    if prefixed:
-        name = prefixed.group(1).lower()
-        digest = prefixed.group(2).lower()
+    text = value or ""
+
+    labelled = _ALGORITHM_PREFIX_RE.match(text)
+    if labelled:
+        name = labelled.group(1).lower()
+        digest = labelled.group(2)
         if name != algorithm.lower():
             raise ManifestError(
                 "hash is labelled {}-bit {} but -a is {}. "
@@ -57,25 +119,31 @@ def parse_verify_target(value, algorithm, expected_length):
                 )
             )
         if len(digest) != expected_length:
-            raise ManifestError(
-                "{} digest must be {} hex characters, got {}".format(
-                    algorithm, expected_length, len(digest)
-                )
-            )
-        return "hash", digest, algorithm
+            raise _length_error(algorithm, digest, expected_length)
+        return "hash", digest.lower(), algorithm, None
 
-    if is_hash_literal(value):
-        digest = value.lower()
-        if len(digest) != expected_length:
-            raise ManifestError(
-                "hash is {} hex characters but -a {} expects {}. "
-                "Pass -a <algorithm> or label the hash, e.g. {}:{}".format(
-                    len(digest), algorithm, expected_length, algorithm, digest[:8] + "..."
-                )
-            )
-        return "hash", digest, algorithm
+    if is_hash_literal(text):
+        if len(text) != expected_length:
+            raise _length_error(algorithm, text, expected_length)
+        return "hash", text.lower(), algorithm, None
 
-    return "file", value, None
+    # A mistyped digest: report the integrity verdict rather than a missing file.
+    body = _LABEL_RE.match(text)
+    if body and _is_hex_token(body.group(2)):
+        name = body.group(1).lower()
+        if name != algorithm.lower():
+            raise ManifestError(
+                "hash is labelled {} but -a is {}. "
+                "Use -a {} or drop the label.".format(name, algorithm, name)
+            )
+        return "malformed", text, algorithm, digest_defect(
+            body.group(2), expected_length
+        )
+
+    if looks_like_digest(text):
+        return "malformed", text, None, digest_defect(text, expected_length)
+
+    return "file", text, None, None
 
 
 def _escape(name):

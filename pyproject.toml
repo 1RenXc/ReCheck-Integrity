@@ -1,21 +1,20 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "recheck"
-version = "1.0.0"
 description = "Verify file integrity with SHA-256 and other hash algorithms, nmap-style CLI."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["sha256", "md5", "checksum", "hash", "integrity", "cli", "security"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: System Administrators",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -28,9 +27,14 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = []
+dynamic = ["version"]
 
 [project.scripts]
 recheck = "recheck.cli:main"
 
 [tool.setuptools]
 packages = ["recheck"]
+
+# recheck.__init__ is the single source of truth for the version number.
+[tool.setuptools.dynamic]
+version = { attr = "recheck.__version__" }

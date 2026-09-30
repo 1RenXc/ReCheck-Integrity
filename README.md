@@ -1,36 +1,33 @@
 # ReCheck
 
-> **Bahasa Indonesia** · [English](README.en.md)
-
-Verifikasi integritas berkas langsung dari terminal, dengan **SHA-256** atau
-**MD5**. Gaya perintah ala nmap, tanpa dependensi, jalan di Linux, macOS, dan
-Windows.
+Verify file integrity from the terminal with **SHA-256** or **MD5**.
+nmap-style command line, no dependencies, runs on Linux, macOS, and Windows.
 
 ```console
-$ recheck -f ./contoh_file.txt
-ReCheck report for ./contoh_file.txt
+$ recheck -f ./sample_file.txt
+ReCheck report for ./sample_file.txt
 Size: 3 B   Time: 0.00 s   Throughput: 28.1 KB/s
 sha256: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 ReCheck done: 1 file hashed in 0.00 seconds
 ```
 
-Setelah terpasang, `recheck` bisa dipanggil dari direktori mana saja.
+Once installed, `recheck` works from any directory.
 
 ---
 
-## Instalasi
+## Installation
 
-Butuh **Python 3.9** atau lebih baru. Belum punya? Ambil dari
-[python.org/downloads](https://www.python.org/downloads/). Di Windows, centang
-**"Add python.exe to PATH"** saat instalasi.
+Requires **Python 3.9** or newer. Don't have it? Get it from
+[python.org/downloads](https://www.python.org/downloads/). On Windows, tick
+**"Add python.exe to PATH"** during setup.
 
-### 1. Pasang pipx
+### 1. Install pipx
 
-`pipx` membuat virtualenv terpisah per aplikasi, jadi Python sistem Anda tidak
-tersentuh. Ini cara yang benar untuk distro yang mengunci Python sistemnya
+`pipx` gives each application its own virtualenv, so your system Python is left
+alone. This is the right approach on distros that lock down the system Python
 (PEP 668 — Kali, Fedora, Debian 12+, Ubuntu 23.10+).
 
-| Sistem | Perintah |
+| Platform | Command |
 |---|---|
 | Debian / Ubuntu / Kali | `sudo apt install pipx && pipx ensurepath` |
 | Fedora | `sudo dnf install pipx` |
@@ -38,43 +35,42 @@ tersentuh. Ini cara yang benar untuk distro yang mengunci Python sistemnya
 | macOS | `brew install pipx && pipx ensurepath` |
 | Windows | `pipx install pipx && pipx ensurepath` |
 
-### 2. Pasang ReCheck
+### 2. Install ReCheck
 
-Perintah yang sama untuk **Linux, macOS, dan Windows**:
+The same command on **Linux, macOS, and Windows**:
 
 ```bash
 pipx install git+https://github.com/1RenXc/ReCheck.git
 ```
 
->`pipx ensurepath` menambahkan folder script ke `PATH`. Jalankan sekali saja,
->setelah itu tutup dan buka terminal kembali.
+>`pipx ensurepath` adds the script folder to `PATH`. Run it once, then close and
+>reopen your terminal.
 
-### Verifikasi
+### Verify
 
 ```console
 $ recheck -V
-recheck 1.0.0 ( https://github.com/1RenXc/ReCheck )
+recheck 1.0.1 ( https://github.com/1RenXc/ReCheck )
 ```
 
-Kalau itu muncul, ReCheck siap dipakai.
+If that prints, ReCheck is ready.
 
 ---
 
-## Cara Pakai
+## Usage
 
-Alurnya tiga langkah: **hash** berkas → **simpan** ke manifest → **verifikasi**
-kapan-kapan dibutuhkan.
+Three steps: **hash** the files → **save** to a manifest → **verify** later.
 
 ```console
-# 1. Rekam baseline saat pertama kali memercayai berkas
+# 1. Record a baseline when you first trust the files
 $ recheck -f ./folder -c baseline.sha256
 
-# 2. Di kemudian hari, pastikan tidak ada yang berubah
+# 2. Later, confirm nothing changed
 $ recheck -v baseline.sha256
 ReCheck report for ./folder/a.txt
 Size: 3 B   Time: 0.00 s   Throughput: 41.7 KB/s
 sha256: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-MATCH: expected checksum
+MATCH: integrity confirmed
 
 ReCheck done: 1 file verified in 0.00 seconds
 $ echo $?
@@ -83,78 +79,78 @@ $ echo $?
 
 ---
 
-## Opsi
+## Options
 
 ```
 recheck -f <file|directory> [Options]
 ```
 
-| Opsi | Arti |
+| Option | Meaning |
 |---|---|
-| `-f <path>` | Target berkas atau direktori. Dapat diulang. Direktori dipindai rekursif |
-| `-c <file>` | Simpan hash yang dihitung ke berkas manifest |
-| `-v <file\|hash>` | Verifikasi terhadap manifest **atau** nilai hash langsung |
-| `-a <alg>` | Algoritma untuk generate **dan** bandingkan. Default `sha256` |
-| `-V` | Nomor versi |
-| `-h`, `--help` | Bantuan lengkap |
+| `-f <path>` | Target file or directory. Repeatable. Directories are walked recursively |
+| `-c <file>` | Write the computed hash(es) to a manifest file |
+| `-v <file\|hash>` | Verify against a manifest **or** an inline hash value |
+| `-a <alg>` | Algorithm for both generation and comparison. Default `sha256` |
+| `-V` | Version number |
+| `-h`, `--help` | Full help |
 
-Nama panjang `--file`, `--create`, `--verify`, `--algorithm`, `--version`,
-`--help` juga tersedia.
+Long names `--file`, `--create`, `--verify`, `--algorithm`, `--version`,
+`--help` also work.
 
-### Algoritma
+### Algorithms
 
-| Nama | Panjang | Catatan |
+| Name | Width | Notes |
 |---|---|---|
-| `sha256` | 256-bit | **Default.** Pilihan untuk verifikasi integritas |
-| `md5` | 128-bit | Hanya kompatibilitas sistem lama. Bukan untuk keamanan |
+| `sha256` | 256-bit | **Default.** The right choice for integrity checks |
+| `md5` | 128-bit | Legacy compatibility only. Not for security |
 
-Daftar ini dibaca langsung dari kode, jadi selalu akurat di `recheck -h`.
+This list is read from the code, so `recheck -h` is always accurate.
 
 ---
 
-## Exit Code
+## Exit codes
 
-| Code | Arti |
+| Code | Meaning |
 |---|---|
-| `0` | Semua berkas cocok |
-| `1` | Ditemukan hash yang tidak cocok (`MISMATCH`) |
-| `2` | Kesalahan penggunaan (opsi tidak dikenal, `-c` bersama `-v`, dll) |
-| `3` | Berkas tidak ditemukan atau error I/O |
+| `0` | All files matched |
+| `1` | A hash did not match, or the hash you passed was not a valid digest (`MISMATCH`) |
+| `2` | Usage error (unknown option, `-c` together with `-v`, etc.) |
+| `3` | File not found or I/O error |
 
-Siap dipakai di script dan CI:
+Ready for scripts and CI:
 
 ```bash
 if recheck -v baseline.sha256; then
-    echo "integritas terverifikasi"
+    echo "integrity verified"
 else
-    echo "PERINGATAN: integritas bermasalah"
+    echo "WARNING: integrity problem"
     exit 1
 fi
 ```
 
 ---
 
-## Contoh
+## Examples
 
 ```bash
-# Cetak hash ke layar
-recheck -f ./contoh_file.txt
+# Print a hash to stdout
+recheck -f ./sample_file.txt
 
-# Hash berlabel, tidak perlu mengingat panjang digit
-recheck -f ./contoh_file.txt -v 'md5:900150983cd24fb0d6963f7d28e17f72' -a md5
+# Label the hash so you don't have to remember the length
+recheck -f ./sample_file.txt -v 'md5:900150983cd24fb0d6963f7d28e17f72' -a md5
 
-# Generate dengan md5
-recheck -f ./contoh_file.txt -a md5 -c contoh_file.md5.txt
+# Generate with md5
+recheck -f ./sample_file.txt -a md5 -c sample_file.md5.txt
 
-# Verifikasi seluruh isi folder, rekursif
+# Verify a whole folder, recursively
 recheck -f ./folder -c baseline.sha256
 recheck -v baseline.sha256
 
-# Beberapa berkas sekaligus
+# Several files at once
 recheck -f a.bin -f b.bin -c checksums.txt
 ```
 
-Cari tahu file mana yang berubah:
+Find out which file changed:
 
 ```bash
 recheck -v baseline.sha256 | grep -B4 MISMATCH
@@ -162,23 +158,23 @@ recheck -v baseline.sha256 | grep -B4 MISMATCH
 
 ---
 
-## Interoperabilitas
+## Interoperability
 
-Manifest ReCheck memakai format GNU coreutils, jadi bisa dibaca `sha256sum` — dan
-sebaliknya:
+ReCheck manifests use the GNU coreutils format, so `sha256sum` can read them —
+and the other way around:
 
 ```bash
-# Manifest ReCheck -> coreutils
+# ReCheck manifest -> coreutils
 recheck -f iso.img -c iso.sha256
 sha256sum -c --strict iso.sha256
 
-# Manifest coreutils -> ReCheck
+# coreutils manifest -> ReCheck
 sha256sum iso.img > iso.sha256
 recheck -v iso.sha256
 ```
 
-Berlaku juga untuk `md5sum`. Berguna kalau pipeline Anda sudah bergantung pada
-`sha256sum -c`, misalnya di Dockerfile, Jenkins, atau GitHub Actions.
+Works with `md5sum` too. Useful when your pipeline already depends on
+`sha256sum -c`, for example in a Dockerfile, Jenkins, or GitHub Actions.
 
 ---
 
@@ -188,7 +184,7 @@ Berlaku juga untuk `md5sum`. Berguna kalau pipeline Anda sudah bergantung pada
 pipx install --force git+https://github.com/1RenXc/ReCheck.git
 ```
 
-## Menghapus
+## Uninstall
 
 ```bash
 pipx uninstall recheck
@@ -200,36 +196,52 @@ pipx uninstall recheck
 
 ### `recheck: command not found`
 
-Paket terpasang, tapi folder script belum ada di `PATH`. Jalankan sekali:
+The package is installed but its script folder isn't on `PATH`. Run once:
 
 ```bash
 pipx ensurepath
 ```
 
-Lalu **buka terminal baru** — `PATH` hanya dibaca saat terminal dimulai.
+Then **open a new terminal** — `PATH` is only read when the terminal starts.
 
 ### `error: externally-managed-environment`
 
-Distro Anda melindungi Python sistem dari pemasangan paket mentah (PEP 668).
-Itulah sebabnya ReCheck dipasang lewat `pipx`, yang memakai virtualenv terpisah
-dan tidak menyentuh Python sistem.
+Your distro protects the system Python from raw package installs (PEP 668).
+That is exactly why ReCheck goes through `pipx`, which uses a separate
+virtualenv and leaves the system Python untouched.
 
-### `Permission denied` saat hashing
+### `Permission denied` while hashing
 
-Hashing butuh hak baca. Untuk berkas milik root:
+Hashing needs read access. For root-owned files:
 
 ```bash
 sudo recheck -f /etc/shadow
 ```
 
-### Hash berbeda antar mesin
+### `MISMATCH: the hash does not match`
 
-Harus begitu. SHA-256 menghasilkan nilai yang sama untuk input yang sama di
-semua platform. Kalau berbeda, berarti berkasnya memang berbeda — bukan
-ReCheck-nya yang salah.
+Two different problems produce this line. The `note:` underneath tells them
+apart — read it first.
+
+`the expected value is not a valid sha256 digest` means the hash you pasted
+cannot match anything, because a character is not a hex digit or the length is
+wrong. Compare `expected:` with `actual:` to spot the typo, or let ReCheck
+record the right value:
+
+```bash
+recheck -f ./file.txt -c baseline.sha256
+```
+
+`the hash does not match` with no `note:` means both values are valid digests
+and the file really did change. That is the answer you want from a check.
+
+### Hashes differ between machines
+
+They should. SHA-256 produces the same value for the same input on every
+platform. If they differ, the files genuinely differ — ReCheck is not wrong.
 
 ---
 
-## Lisensi
+## License
 
 [MIT](LICENSE) © ReCheck contributors
