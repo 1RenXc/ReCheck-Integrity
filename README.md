@@ -50,7 +50,7 @@ pipx install git+https://github.com/1RenXc/ReCheck-Integrity.git
 
 ```console
 $ recheck -V
-recheck 1.0.1 ( https://github.com/1RenXc/ReCheck-Integrity )
+recheck 1.0.2 ( https://github.com/1RenXc/ReCheck-Integrity )
 ```
 
 If that prints, ReCheck is ready.
@@ -73,9 +73,38 @@ sha256: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 MATCH: integrity confirmed
 
 ReCheck done: 1 file verified in 0.00 seconds
+ReCheck summary: all 1 file verified
 $ echo $?
 0
 ```
+
+### Run summary
+
+Every verify run ends with a tally and the names of the files that failed, so
+you do not have to scroll back or grep for them:
+
+```console
+$ recheck -f ./Downloads -v downhash.txt
+... one report per file ...
+
+ReCheck done: 27 files verified in 4.10 seconds
+ReCheck summary: 26 of 27 files verified, 1 MISMATCH
+MISMATCH: ./Downloads/haha.txt
+$ echo $?
+1
+```
+
+| Line | Meaning |
+|---|---|
+| `all N files verified` | Every checked file matched |
+| `N of M verified, K MISMATCH(ES)` | K files really changed |
+| `N of M verified, K ERROR(S)` | K files could not be read, or were not listed in the manifest |
+| `no files checked` | The target held no files (for example an empty directory) |
+
+Each `MISMATCH:` and `ERROR:` line repeats the path from the report above it, so
+`ERROR:` lines carry the reason in parentheses. Nothing else changes: the
+per-file reports stay exactly as they were, and a run with no failures simply
+adds the one-line summary.
 
 ---
 
@@ -150,9 +179,11 @@ recheck -v baseline.sha256
 recheck -f a.bin -f b.bin -c checksums.txt
 ```
 
-Find out which file changed:
+Find out which file changed — either from the summary block at the end, or
+straight from the reports:
 
 ```bash
+recheck -v baseline.sha256 | tail -5
 recheck -v baseline.sha256 | grep -B4 MISMATCH
 ```
 

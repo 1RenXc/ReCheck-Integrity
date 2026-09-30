@@ -176,12 +176,16 @@ def _print_report(write, result, algorithm):
 
 
 def _print_verdict(write, result, expected, algorithm, reason, defect=None):
+    """Report the outcome for one file and return (exit code, status).
+
+    status is "match", "mismatch" or "error" and feeds the run summary.
+    """
     if "error" in result:
         write("ERROR: {}\n\n".format(result["error"]))
-        return EXIT_ERROR
+        return EXIT_ERROR, "error"
     if result["digest"] == expected:
         write("MATCH: integrity confirmed\n\n")
-        return EXIT_OK
+        return EXIT_OK, "match"
     write("MISMATCH: {}, so the integrity of {} is not confirmed\n".format(
         reason, result["path"]
     ))
@@ -192,7 +196,7 @@ def _print_verdict(write, result, expected, algorithm, reason, defect=None):
             algorithm, defect
         ))
     write("\n")
-    return EXIT_MISMATCH
+    return EXIT_MISMATCH, "mismatch"
 
 
 def _summary_line(write, count, verb, started):
@@ -201,6 +205,41 @@ def _summary_line(write, count, verb, started):
             count, "" if count == 1 else "s", verb, time.perf_counter() - started
         )
     )
+
+
+def _plural(count, singular, plural=None):
+    """Format a count with its noun, e.g. 1 MISMATCH / 2 MISMATCHES."""
+    if count == 1:
+        return "{} {}".format(count, singular)
+    return "{} {}".format(count, plural or singular + "s")
+
+
+def _record_status(status, path, result, mismatches, errors):
+    """File one target's outcome for the run summary at the end of the report."""
+    if status == "mismatch":
+        mismatches.append(path)
+    elif status == "error":
+        errors.append((path, result.get("error", "could not be read")))
+
+
+def _print_run_summary(write, checked, mismatches, errors):
+    """Tally the run and name the files that failed, after the per-file reports."""
+    failed = len(mismatches) + len(errors)
+    if not checked:
+        write("ReCheck summary: no files checked\n")
+    elif not failed:
+        write("ReCheck summary: all {} verified\n".format(_plural(checked, "file")))
+    else:
+        parts = ["{} of {} verified".format(checked - failed, checked)]
+        if mismatches:
+            parts.append(_plural(len(mismatches), "MISMATCH", "MISMATCHES"))
+        if errors:
+            parts.append(_plural(len(errors), "ERROR", "ERRORS"))
+        write("ReCheck summary: {}\n".format(", ".join(parts)))
+    for path in mismatches:
+        write("MISMATCH: {}\n".format(path))
+    for path, reason in errors:
+        write("ERROR: {} ({})\n".format(path, reason))
 
 
 def _resolve_targets(paths, algorithm):
@@ -296,6 +335,8 @@ def _run_verify_manifest(write, files, algorithm, manifest_path):
 
     selected = None
     unlisted = []
+    mismatches = []
+    errors = []
     if files:
         wanted = {os.path.normpath(path) for path in collect_targets(files)}
         selected = [
@@ -305,11 +346,11 @@ def _run_verify_manifest(write, files, algorithm, manifest_path):
         listed = {os.path.normpath(path) for _, path in selected}
         unlisted = sorted(wanted - listed)
         for path in unlisted:
+            reason = "not listed in manifest {}".format(manifest_path)
             write(
-                "ReCheck report for {}\nERROR: not listed in manifest {}\n\n".format(
-                    path, manifest_path
-                )
+                "ReCheck report for {}\nERROR: {}\n\n".format(path, reason)
             )
+            errors.append((path, reason))
 
     scope = selected if selected is not None else entries
     verdict = EXIT_ERROR if unlisted else EXIT_OK
@@ -322,25 +363,33 @@ def _run_verify_manifest(write, files, algorithm, manifest_path):
         if relocated:
             result["path"] = "{} (from manifest directory)".format(entry_path)
         _print_report(write, result, algorithm)
-        verdict = max(verdict, _print_verdict(
+        code, status = _print_verdict(
             write, result, expected, algorithm,
             "the file no longer matches the manifest",
-        ))
+        )
+        _record_status(status, entry_path, result, mismatches, errors)
+        verdict = max(verdict, code)
 
     _summary_line(write, len(scope), "verified", started)
+    _print_run_summary(write, len(scope) + len(unlisted), mismatches, errors)
     return verdict
 
 
 def _run_verify_literal(write, files, algorithm, digest, defect=None):
     started = time.perf_counter()
     results = _resolve_targets(files, algorithm)
+    mismatches = []
+    errors = []
     verdict = EXIT_OK
     for result in results:
         _print_report(write, result, algorithm)
-        verdict = max(verdict, _print_verdict(
+        code, status = _print_verdict(
             write, result, digest, algorithm, "the hash does not match", defect
-        ))
+        )
+        _record_status(status, result["path"], result, mismatches, errors)
+        verdict = max(verdict, code)
     _summary_line(write, len(results), "verified", started)
+    _print_run_summary(write, len(results), mismatches, errors)
     return verdict
 
 
