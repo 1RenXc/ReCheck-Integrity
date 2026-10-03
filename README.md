@@ -33,7 +33,7 @@ alone. This is the right approach on distros that lock down the system Python
 | Fedora | `sudo dnf install pipx` |
 | Arch | `sudo pacman -S pipx` |
 | macOS | `brew install pipx && pipx ensurepath` |
-| Windows | `pipx install pipx && pipx ensurepath` |
+| Windows | `python -m pip install --user pipx` -> `python -m pipx ensurepath`|
 
 ### 2. Install ReCheck
 
